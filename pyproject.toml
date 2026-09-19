@@ -77,7 +77,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "--cov=src/triagem --cov-report=term-missing --cov-fail-under=80"
+addopts = "-m \"not network\" --cov=src/triagem --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
 markers = [
     "network: marks tests that require network access (deselected by default)",
