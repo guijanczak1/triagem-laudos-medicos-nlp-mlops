@@ -72,7 +72,7 @@ no_implicit_optional = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = ["sklearn.*", "skl2onnx.*", "onnxruntime.*", "joblib.*", "onnx.*"]
+module = ["sklearn.*", "skl2onnx.*", "onnxruntime.*", "joblib.*", "onnx.*", "pandas.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
