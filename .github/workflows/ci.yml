@@ -1,0 +1,91 @@
+name: CI
+
+# Two distinct automations (rubric requirement): "lint" (ruff + black + mypy)
+# and "test" (pytest + coverage). A third automation (Docker build + Airflow
+# DAG validation) lives in a separate workflow — see ci-extra.yml (T16).
+
+on:
+  push:
+    branches:
+      - main
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  POETRY_VERSION: "1.8.3"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: poetry
+
+      - name: Install dependencies
+        # No `--with airflow`: the optional group is excluded here on purpose
+        # (mirrors local dev) and validated separately in ci-extra.yml (T16).
+        run: poetry install --no-interaction
+
+      # Same three commands a developer runs locally (see README "Qualidade
+      # de codigo"). Do not add `|| true` / `continue-on-error`: a real
+      # finding here must fail the job.
+      - name: ruff check
+        run: poetry run ruff check .
+
+      - name: black --check
+        run: poetry run black --check .
+
+      - name: mypy
+        run: poetry run mypy src
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      # `poetry run pytest` alone is the exact local command: coverage
+      # target, threshold (--cov-fail-under=80) and the `not network` marker
+      # deselection all come from [tool.pytest.ini_options] in pyproject.toml.
+      # `--cov-report=xml` only adds a machine-readable report for the
+      # artifact upload below; it does not change what passes or fails.
+      - name: pytest (with coverage)
+        run: poetry run pytest --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 14
