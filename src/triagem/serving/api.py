@@ -1,11 +1,13 @@
 """FastAPI serving layer for the triage classifier (T10).
 
-Exposes ``POST /predict``, ``POST /predict/batch``, ``GET /health`` and
-``GET /model-info`` on top of the backend-agnostic ``Predictor`` (T9). The
-model is loaded exactly once, in the ASGI lifespan (startup) -- never per
-request: ``Predictor.load()`` is called a single time in :func:`_lifespan`
-and the resulting instance is stashed on ``app.state.predictor`` for every
-handler to reuse (on top of ``Predictor``'s own lazy-singleton cache).
+Exposes ``POST /predict``, ``POST /predict/batch``, ``GET /health``,
+``GET /model-info`` and ``GET /metrics`` (Prometheus instrumentation, T17
+-- see :mod:`triagem.serving.metrics`) on top of the backend-agnostic
+``Predictor`` (T9). The model is loaded exactly once, in the ASGI
+lifespan (startup) -- never per request: ``Predictor.load()`` is called a
+single time in :func:`_lifespan` and the resulting instance is stashed on
+``app.state.predictor`` for every handler to reuse (on top of
+``Predictor``'s own lazy-singleton cache).
 
 If the configured backend's artifact is missing at startup, the process
 still starts (so a container orchestrator can see it and `/health` can
@@ -25,11 +27,13 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from triagem.config import get_settings
 from triagem.exceptions import ModelArtifactNotFound
+from triagem.serving import metrics as prom_metrics
+from triagem.serving.metrics import PrometheusMiddleware
 from triagem.serving.predictor import Predictor
 from triagem.serving.schemas import (
     LABEL_PT,
@@ -56,6 +60,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     except ModelArtifactNotFound as exc:
         logger.warning("model failed to load at startup, endpoints will 503: %s", exc)
         app.state.predictor = None
+    else:
+        meta = app.state.predictor.metadata
+        prom_metrics.set_model_info(backend=meta.backend, model_version=meta.model_version)
     yield
 
 
@@ -94,6 +101,11 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
+    # Records triagem_requests_total / triagem_request_duration_seconds /
+    # triagem_errors_total for every route below; never instruments GET
+    # /metrics itself (T17).
+    app.add_middleware(PrometheusMiddleware)
+
     @app.exception_handler(RequestValidationError)
     async def _handle_validation_error(
         _request: Request, exc: RequestValidationError
@@ -113,6 +125,15 @@ def create_app() -> FastAPI:
         logger.exception("unhandled error while serving request")
         body = ErrorResponse(detail="Internal server error.", error_type="internal_error")
         return JSONResponse(status_code=500, content=body.model_dump())
+
+    @app.get(
+        "/metrics",
+        tags=["ops"],
+        summary="Prometheus metrics (text exposition format)",
+        include_in_schema=False,
+    )
+    async def metrics_endpoint() -> Response:
+        return Response(content=prom_metrics.render_latest(), media_type=prom_metrics.CONTENT_TYPE)
 
     @app.get(
         "/health",
@@ -169,6 +190,9 @@ def create_app() -> FastAPI:
         payload: PredictRequest, predictor: Predictor = Depends(_get_predictor)
     ) -> PredictResponse:
         result = predictor.predict(payload.text)
+        prom_metrics.record_prediction(
+            label=result.label, backend=result.backend, latency_ms=result.latency_ms
+        )
         return PredictResponse(
             label=result.label,
             label_pt=LABEL_PT[result.label],
@@ -191,6 +215,10 @@ def create_app() -> FastAPI:
         start = time.perf_counter()
         results = predictor.predict_batch(payload.texts)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
+        for result in results:
+            prom_metrics.record_prediction(
+                label=result.label, backend=result.backend, latency_ms=result.latency_ms
+            )
         predictions = [
             PredictionItem(
                 label=result.label,
