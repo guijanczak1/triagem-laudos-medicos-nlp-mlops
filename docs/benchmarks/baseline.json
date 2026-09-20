@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-09-20T15:28:14.108969+00:00",
+  "http_target_skipped_reason": null,
+  "machine": {
+    "cpu_count": "8",
+    "fastapi_version": "0.115.14",
+    "numpy_version": "2.5.3",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+    "python_version": "3.12.13",
+    "scikit_learn_version": "1.9.1"
+  },
+  "results": [
+    {
+      "max_ms": 0.8666999929118901,
+      "mean_ms": 0.34119099931558594,
+      "measured_at": "2026-09-20T15:28:13.578604+00:00",
+      "min_ms": 0.23669999791309237,
+      "n": 200,
+      "p50_ms": 0.3232000017305836,
+      "p90_ms": 0.4183100070804357,
+      "p95_ms": 0.46566999080823707,
+      "p99_ms": 0.7333319942699743,
+      "seed": 42,
+      "stdev_ms": 0.08773973813941628,
+      "target": "in_process_sklearn",
+      "throughput_rps": 2929.535874044959,
+      "warmup": 20
+    },
+    {
+      "max_ms": 2.2412000107578933,
+      "mean_ms": 1.7604790008044802,
+      "measured_at": "2026-09-20T15:28:14.089459+00:00",
+      "min_ms": 1.5904000028967857,
+      "n": 200,
+      "p50_ms": 1.753200005623512,
+      "p90_ms": 1.8595500092487782,
+      "p95_ms": 1.8936950131319463,
+      "p99_ms": 1.9747210110654114,
+      "seed": 42,
+      "stdev_ms": 0.08256909141636543,
+      "target": "http_container",
+      "throughput_rps": 567.9241548533904,
+      "warmup": 20
+    }
+  ]
+}
