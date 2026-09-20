@@ -1,0 +1,55 @@
+# Build context for docker/Dockerfile.api. Keep this narrow: everything the
+# runtime image needs is pyproject.toml, poetry.lock, README.md, src/,
+# docker/entrypoint.sh and models/ (see the model-artifact strategy note at
+# the top of docker/Dockerfile.api) -- models/ is intentionally NOT excluded
+# here even though it's gitignored (that only affects `git`, not what's on
+# local disk / what Docker COPY can see).
+
+# Version control
+.git
+.gitignore
+
+# Python virtualenvs and caches -- deps are installed fresh from
+# poetry.lock/requirements.txt in the builder stage, never reused from a
+# local venv.
+.venv
+venv
+__pycache__
+*.py[cod]
+*.pyo
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+
+# Raw/processed dataset -- only training/build scripts read this, never the
+# serving API.
+data/
+
+# Non-serving docs and infra -- irrelevant to this image, only bloat/bust
+# cache unnecessarily.
+docs/
+dags/
+deploy/
+scripts/
+.github/
+docker/airflow/
+docker/prometheus/
+docker/grafana/
+
+# Test suite -- not shipped in the runtime image.
+tests/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local secrets -- never baked into the image.
+.env
+.env.*
+!.env.example

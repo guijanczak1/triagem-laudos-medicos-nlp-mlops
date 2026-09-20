@@ -1,0 +1,124 @@
+# syntax=docker/dockerfile:1
+#
+# Inference-serving image for the triage API (src/triagem/serving/api.py).
+# Multi-stage: a Poetry-only "builder" resolves the locked dependency set
+# into a plain requirements.txt, and a Poetry-free "runtime" stage installs
+# from that file and runs as a non-root user.
+#
+# --- Model artifact strategy (T11 decision) -------------------------------
+# The image BAKES IN the model artifacts (models/model.joblib +
+# models/model.onnx + models/model_onnx_meta.json + models/label_encoder.json
+# + models/metrics.json) at build time via COPY, rather than requiring a
+# runtime volume mount. Rationale:
+#   - This project has no MLflow registry / DVC remote (PDF does not ask for
+#     either -- see state/.../backlog.json "gates_pulados"); the artifact on
+#     local disk (produced by `python -m triagem.training.train` / T7 and
+#     `python -m triagem.optimization.onnx_export` / T20) IS the source of
+#     truth, so baking it in makes the image self-contained and reproducible.
+#   - The planned production target (README "Decisao arquitetural de nuvem",
+#     T23/T24) is AWS ECS Fargate behind an ALB. Fargate tasks have no local
+#     bind mounts, and this project does not provision EFS -- a volume-only
+#     strategy would leave the deployed container without a model. Task T22
+#     already assumes "Imagem Docker inclui onnxruntime e o artefato .onnx".
+#   - Retraining changes rarely relative to code, so the model COPY is placed
+#     AFTER the dependency layer and AFTER the source layer: the dependency
+#     layer stays cached across retrains, and re-training alone only busts
+#     the (cheap) model layer, not the pip-install layer.
+#
+# The source directory is selectable via --build-arg MODELS_DIR=<path>
+# (default: "models", the path Settings.models_dir also defaults to). This
+# also covers the acceptance criterion's "OR copiados via build arg
+# MODELS_DIR" alternative: point it at an empty placeholder directory (e.g.
+# one with just a .gitkeep) to build a model-less image for smoke-testing
+# the API surface, or at a directory freshly populated by a CI training step.
+#
+# ALTERNATIVE (documented, not the default): for local iteration without
+# rebuilding after every retrain, override the baked-in model at `docker run`
+# time with a bind mount that shadows /app/models, e.g.:
+#   docker run -p 8000:8000 -v "$(pwd)/models:/app/models:ro" triagem-api:local
+# This is exactly what docker-compose.yml (T18) may choose to do for local
+# dev; it does not change anything about how this Dockerfile is built.
+#
+# `models/` is gitignored (not versioned -- see .gitignore's "Model
+# artifacts" section) but that only affects `git`; the Docker build context
+# is the local filesystem, so COPY below sees whatever is on disk regardless
+# of what git tracks. Building this image therefore requires having already
+# run the training (T7) and ONNX export (T20) commands locally at least once.
+# ---------------------------------------------------------------------------
+
+# --- Stage 1: builder (Poetry only, never shipped) -------------------------
+FROM python:3.12-slim AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    POETRY_NO_INTERACTION=1
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir "poetry>=1.8" "poetry-plugin-export>=1.8"
+
+# pyproject/poetry.lock (+ README, referenced by pyproject's `readme` field
+# and required for Poetry to load the project metadata) are all `poetry
+# export` needs -- no application code is required to resolve dependencies.
+COPY pyproject.toml poetry.lock README.md ./
+RUN poetry export --format requirements.txt --without-hashes --only main \
+    --output requirements.txt
+
+# --- Stage 2: runtime (no Poetry, non-root, only what's needed to serve) ---
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app/src
+
+ARG MODELS_DIR=models
+
+WORKDIR /app
+
+# The 'onnx' backend's exported graph (T20, skl2onnx conversion of the TF-IDF
+# vectorizer) includes a StringNormalizer op that onnxruntime initializes
+# against the OS locale; python:3.12-slim ships no locales at all, which
+# makes ort.InferenceSession(...) fail at startup with "Failed to construct
+# locale with name:en_US.UTF-8" (found by actually running this image with
+# TRIAGEM_MODEL_BACKEND=onnx during T11's own docker-run validation, not a
+# theoretical concern). Generate that one locale so both backends load.
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y locales && \
+    sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && \
+    locale-gen && \
+    rm -rf /var/lib/apt/lists/*
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# Non-root user the process runs as (created before COPY so --chown works).
+RUN addgroup --system triagem && \
+    adduser --system --ingroup triagem --home /app --no-create-home triagem
+
+# --- Dependency layer: cacheable independently of both code and model ------
+COPY --from=builder /app/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Code layer: changes far more often than dependencies, never as often
+# as the model -------------------------------------------------------------
+COPY --chown=triagem:triagem src ./src
+
+# --- Model layer: see the strategy note at the top of this file ------------
+COPY --chown=triagem:triagem ${MODELS_DIR} ./models
+
+COPY --chown=triagem:triagem docker/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+USER triagem
+
+EXPOSE 8000
+
+# GET /health returns 200 only once app.state.predictor loaded successfully
+# (src/triagem/serving/api.py::health) -- a 503 (model failed to load) or a
+# connection error both make this probe fail, which is the desired signal.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import sys,urllib.request as u; \
+r=u.urlopen('http://127.0.0.1:8000/health', timeout=3); \
+sys.exit(0 if r.status == 200 else 1)" || exit 1
+
+ENTRYPOINT ["./entrypoint.sh"]
