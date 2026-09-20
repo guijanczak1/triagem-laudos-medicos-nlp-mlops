@@ -1,0 +1,57 @@
+{
+  "backends": {
+    "onnx": {
+      "backend": "onnx",
+      "max_ms": 0.17579999985173345,
+      "mean_ms": 0.09900700024445541,
+      "min_ms": 0.06609997944906354,
+      "n": 200,
+      "p50_ms": 0.09839999256655574,
+      "p90_ms": 0.12069998774677515,
+      "p95_ms": 0.1286549915676005,
+      "p99_ms": 0.15294600016204635,
+      "seed": 42,
+      "stdev_ms": 0.01889682957215116,
+      "throughput_rps": 10085.169247687374,
+      "warmup": 20
+    },
+    "sklearn": {
+      "backend": "sklearn",
+      "max_ms": 0.8004000119399279,
+      "mean_ms": 0.3250460003619082,
+      "min_ms": 0.2324000233784318,
+      "n": 200,
+      "p50_ms": 0.3198999911546707,
+      "p90_ms": 0.37360001297201956,
+      "p95_ms": 0.40885502094170056,
+      "p99_ms": 0.7492349980748255,
+      "seed": 42,
+      "stdev_ms": 0.0709807647497414,
+      "throughput_rps": 3074.600571054941,
+      "warmup": 20
+    }
+  },
+  "equivalence": {
+    "equivalence_min_pct": 99.0,
+    "equivalence_pct": 99.65373961218836,
+    "n_compared": 2888,
+    "n_matches": 2878,
+    "passed": true
+  },
+  "generated_at": "2026-09-20T15:37:25.139591+00:00",
+  "holdout_test_size": 0.2,
+  "machine": {
+    "cpu_count": "8",
+    "numpy_version": "2.5.3",
+    "onnxruntime_version": "1.30.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+    "python_version": "3.12.13",
+    "scikit_learn_version": "1.9.1",
+    "skl2onnx_version": "1.20.0"
+  },
+  "p50_reduction_met": true,
+  "p50_reduction_min_pct": 20.0,
+  "p50_reduction_pct": 69.24038909429677,
+  "seed": 42
+}
