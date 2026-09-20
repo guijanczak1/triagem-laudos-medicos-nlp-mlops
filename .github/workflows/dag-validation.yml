@@ -1,0 +1,58 @@
+name: Airflow DAG validation
+
+# Fourth automation (rubric requires >= 2; see ci.yml and docker-build.yml
+# for the other two/three -- T16 requires >= 3 total, this repo ships 4).
+# Installs the optional `airflow` Poetry group (see pyproject.toml's
+# [tool.poetry.group.airflow] -- apache-airflow does not install natively on
+# Windows, so it is never in the default `poetry install`) on an
+# ubuntu-latest runner and runs the DagBag integrity test written in T14
+# (tests/dags/test_dag_integrity.py), which that test's own docstring already
+# names this workflow as its CI home. Complements docker-build.yml: together
+# they validate the two artifacts T15 introduced (docker/Dockerfile.airflow
+# and dags/train_triagem_dag.py) without needing Docker-in-Docker or a live
+# Airflow metadata db -- DagBag() alone is enough to prove the DAG imports,
+# has the five expected tasks and no cycles.
+
+on:
+  push:
+    branches:
+      - main
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  POETRY_VERSION: "1.8.3"
+
+jobs:
+  dag-validation:
+    name: dag-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: poetry
+
+      - name: Install dependencies (main + optional airflow group)
+        run: poetry install --no-interaction --with airflow
+
+      # Targets only the DagBag integrity suite (T14), not the full test
+      # suite (already covered by ci.yml's "test" job): --no-cov disables
+      # pytest-cov here because pyproject.toml's global --cov-fail-under=80
+      # is calibrated against the whole `src/triagem` package, which this
+      # narrow, single-file run never comes close to exercising.
+      - name: DagBag integrity test (T14)
+        run: poetry run pytest tests/dags/test_dag_integrity.py -v --no-cov

@@ -1,8 +1,9 @@
 name: CI
 
 # Two distinct automations (rubric requirement): "lint" (ruff + black + mypy)
-# and "test" (pytest + coverage). A third automation (Docker build + Airflow
-# DAG validation) lives in a separate workflow — see ci-extra.yml (T16).
+# and "test" (pytest + coverage). Two more automations (Docker build and
+# Airflow DAG validation) live in separate workflows — see
+# docker-build.yml and dag-validation.yml (T16).
 
 on:
   push:

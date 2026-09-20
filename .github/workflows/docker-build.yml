@@ -1,0 +1,58 @@
+name: Docker build (API)
+
+# Third automation (rubric requires >= 2; ci.yml already provides "lint" and
+# "test" -- see that file). Builds docker/Dockerfile.api (the inference API
+# image, T11) on every push and PR so a broken Dockerfile is caught in CI,
+# independently of ci.yml and dag-validation.yml. Never pushes to a
+# registry: that belongs to the CLOUD gate (HARNESS.md §6, deploy real) via
+# scripts/deploy_aws.ps1 (T25), not this workflow.
+#
+# --- Why a placeholder models/ directory -----------------------------------
+# `models/` is gitignored (see .gitignore's "Model artifacts" section) and
+# therefore absent from a fresh checkout on this runner. docker/Dockerfile.api
+# does `COPY ${MODELS_DIR} ./models`, which needs *some* directory to exist.
+# Running the full training pipeline here just to get a buildable image would
+# duplicate dags/train_triagem_dag.py's job (T14/T15) and slow this workflow
+# down with a network dataset download for a check that only needs to prove
+# the Dockerfile itself builds. Dockerfile.api's own header comment documents
+# exactly this case: "point it at an empty placeholder directory (e.g. one
+# with just a .gitkeep) to build a model-less image for smoke-testing the API
+# surface" -- docker/ci/empty-models/.gitkeep is that directory. The image
+# built here is therefore a build-only smoke check, not the artifact that
+# would ever be deployed (the real deploy path bakes in a trained
+# models/model.joblib + model.onnx, per T25/docs/deploy_aws.md).
+
+on:
+  push:
+    branches:
+      - main
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (model-less placeholder, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          push: false
+          build-args: |
+            MODELS_DIR=docker/ci/empty-models
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: triagem-api:ci
