@@ -39,6 +39,8 @@ deploy/**/.terraform/
 deploy/**/*.tfstate
 deploy/**/*.tfstate.*
 deploy/**/.terraform.tfstate.lock.info
+deploy/**/tfplan.out
+deploy/**/terraform.tfvars
 
 # Airflow (local execution)
 airflow/logs/
