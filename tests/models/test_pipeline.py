@@ -13,8 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 
@@ -40,7 +40,7 @@ class TestBuildPipelineShape:
         assert isinstance(vectorizer, TfidfVectorizer)
         assert vectorizer.ngram_range == (1, 2)
         assert vectorizer.min_df == 2
-        assert vectorizer.sublinear_tf is True
+        assert vectorizer.sublinear_tf is False
         assert vectorizer.strip_accents == "unicode"
         assert vectorizer.lowercase is True
         assert vectorizer.max_features == 1234
@@ -49,10 +49,11 @@ class TestBuildPipelineShape:
         pipeline = build_pipeline(seed=7)
         classifier = pipeline.named_steps[CLASSIFIER_STEP]
 
-        assert isinstance(classifier, RandomForestClassifier)
-        assert classifier.n_estimators == 300
+        assert isinstance(classifier, LogisticRegression)
+        assert classifier.solver == "lbfgs"
+        assert classifier.max_iter == 2000
+        assert classifier.C == 0.1
         assert classifier.random_state == 7
-        assert classifier.n_jobs == -1
         assert classifier.class_weight == "balanced"
 
     def test_no_lambdas_or_function_transformers(self) -> None:
@@ -60,9 +61,9 @@ class TestBuildPipelineShape:
         pipeline = build_pipeline()
 
         for _, step in pipeline.steps:
-            assert step.__class__.__module__.startswith("sklearn."), (
-                f"step {step!r} is not a stock scikit-learn transformer/estimator"
-            )
+            assert step.__class__.__module__.startswith(
+                "sklearn."
+            ), f"step {step!r} is not a stock scikit-learn transformer/estimator"
 
 
 class TestFitPredictOnFixture:
@@ -103,7 +104,12 @@ class TestFitPredictOnFixture:
 
     def test_sanity_metric_beats_trivial_floor(self) -> None:
         """Not a quality gate (that's T7) -- just proves the pipeline learns
-        something on real text rather than predicting noise."""
+        something on real text rather than predicting noise. Kept at the
+        same 0.25 floor used for the prior ``RandomForestClassifier``
+        baseline -- the ``LogisticRegression`` replacement (T6/T7 review,
+        with the tuned ``sublinear_tf=False``/``C=0.1`` found during the
+        real full-dataset run) clears it comfortably on this 54-row
+        fixture too (measured ~0.36)."""
         x_train, y_train, x_test, y_test = self._train_test_texts_labels()
         pipeline = build_pipeline(seed=42)
 

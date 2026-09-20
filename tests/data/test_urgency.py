@@ -136,9 +136,33 @@ class TestComputeUrgencyScore:
         second = compute_urgency_score(text, condition_label=1)
         assert first == second
 
-    def test_empty_text_does_not_divide_by_zero(self) -> None:
+    def test_empty_text_returns_prior_only(self) -> None:
         score = compute_urgency_score("", condition_label=2)
         assert score == pytest.approx(0.0)
+
+    def test_score_is_length_invariant_given_the_same_keyword_hits(self) -> None:
+        """T4 re-tuning: the score is raw hit count, NOT normalized by word count.
+
+        Diluting a fixed set of keyword hits with a lot of neutral filler
+        text must not change the score -- that length-sensitivity (a
+        mismatch with how TF-IDF's L2 normalization represents documents)
+        was the diagnosed root cause of the original formula's low ceiling.
+        """
+        short_text = "Acute severe emergency."
+        padded_text = short_text + " " + "the patient was seen in clinic today " * 20
+
+        assert compute_urgency_score(short_text, condition_label=2) == pytest.approx(
+            compute_urgency_score(padded_text, condition_label=2)
+        )
+
+    def test_raw_hit_count_is_not_divided_by_word_count(self) -> None:
+        """Two hits in a two-word text score the same as two hits in a longer one."""
+        two_word_text = "Acute severe"
+        longer_text = "Acute condition remains severe despite treatment and monitoring"
+
+        assert compute_urgency_score(two_word_text, condition_label=2) == pytest.approx(
+            compute_urgency_score(longer_text, condition_label=2)
+        )
 
 
 class TestFitThresholds:

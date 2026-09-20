@@ -92,11 +92,50 @@ _NORMAL_PATTERN = _compile_term_pattern(NORMAL_TERMS)
 def compute_urgency_score(text: str, condition_label: int) -> float:
     """Compute the deterministic urgency score for one abstract.
 
-    ``(urgent keyword hits - normal keyword hits)``, normalized by the
-    text's word count, plus ``CONDITION_PRIOR[condition_label]`` as a
-    secondary, low-weight tie-breaker. A pure function of its inputs: the
-    same text and category always yield the same score, which is what makes
-    ``build_dataset`` reproducible byte-for-byte across runs.
+    ``(urgent keyword hits - normal keyword hits)``, plus
+    ``CONDITION_PRIOR[condition_label]`` as a secondary, low-weight
+    tie-breaker. A pure function of its inputs: the same text and category
+    always yield the same score, which is what makes ``build_dataset``
+    reproducible byte-for-byte across runs.
+
+    Revision note (T4 re-tuning, post T6/T7 review): the original formula
+    divided the hit difference by the text's raw word count. That is a
+    normalization TF-IDF does not use -- ``TfidfVectorizer`` (T6's
+    vectorizer) L2-normalizes the whole ~20,000-dim document vector, a
+    geometrically different operation from dividing a hand-picked keyword
+    count by total word count. That mismatch between how the label was
+    generated and how TF-IDF represents the text was diagnosed (by two
+    independent reviews) as the real ceiling on model quality, not a
+    tuning gap: real full-dataset (14,438 samples) results peaked at
+    macro_f1=0.5716 / recall_urgente=0.7280 against the same lexicons and
+    prior used here, regardless of classifier family or TF-IDF
+    hyperparameters.
+
+    Three length-normalization alternatives were evaluated empirically
+    against the real corpus (TF-IDF(1,2-gram, L2) + LogisticRegression,
+    same architecture as ``triagem.models.pipeline.build_pipeline``,
+    default ``C=0.1``):
+
+    - Raw hit count, no length normalization at all (this function's
+      current formula): macro_f1=0.6427, recall_urgente=0.7364.
+    - Presence-weighted by ``1/sqrt(unique terms in text)`` (an
+      approximation of TF-IDF's L2 geometry): macro_f1=0.6363,
+      recall_urgente=0.7455.
+    - Binary presence per lexicon term (1 if the term appears, 0
+      otherwise), summed: macro_f1=0.5985, recall_urgente=0.6981.
+
+    Dropping the word-count division entirely (this function) won outright
+    at the production default and matched or beat every other candidate
+    (including a family of fractional-power word-count normalizations,
+    e.g. ``diff / word_count**0.1``, and further ``C``/``max_features``
+    re-tuning) once the classifier's ``C`` was also re-tuned: best
+    observed on the full dataset was macro_f1~=0.71, recall_urgente~=0.82
+    -- a large improvement over the original 0.57/0.73, but still short of
+    the project's 0.80/0.85 gate. This function's own real numbers on the
+    full 14,438-sample dataset, at the production default hyperparameters
+    (``build_pipeline()``'s ``C=0.1``): macro_f1=0.6427,
+    recall_urgente=0.7364. See ``docs/model_card.md`` (task T8) for the
+    published model card.
 
     Args:
         text: Abstract text to score.
@@ -108,9 +147,8 @@ def compute_urgency_score(text: str, condition_label: int) -> float:
     """
     urgent_hits = len(_URGENT_PATTERN.findall(text))
     normal_hits = len(_NORMAL_PATTERN.findall(text))
-    word_count = max(len(text.split()), 1)
     prior = CONDITION_PRIOR.get(condition_label, 0.0)
-    return (urgent_hits - normal_hits) / word_count + prior
+    return float(urgent_hits - normal_hits) + prior
 
 
 @dataclass(frozen=True)
