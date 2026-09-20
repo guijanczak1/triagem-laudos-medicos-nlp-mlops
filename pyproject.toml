@@ -75,6 +75,13 @@ strict_equality = true
 module = ["sklearn.*", "skl2onnx.*", "onnxruntime.*", "joblib.*", "onnx.*", "pandas.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# apache-airflow lives in an optional Poetry group (not installed natively on
+# Windows - see dags/train_triagem_dag.py docstring); mypy runs against the
+# main venv, where it's genuinely absent, not a real missing-stub problem.
+module = ["airflow.*", "pendulum.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-m \"not network\" --cov=src/triagem --cov-report=term-missing --cov-fail-under=80"
