@@ -5,6 +5,11 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
+    # Fixed uid (T19): the provisioned dashboard (docker/grafana/dashboards/
+    # triagem_api.json) references this exact uid in every panel's
+    # datasource, so it never depends on Grafana's name->uid auto-hash and
+    # never breaks if this datasource is ever renamed.
+    uid: prometheus
     type: prometheus
     access: proxy
     # Compose service name (network DNS), not localhost -- Grafana and

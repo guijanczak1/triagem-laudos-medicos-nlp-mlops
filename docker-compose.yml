@@ -94,6 +94,12 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      # T19: dashboard JSON lives outside provisioning/ on purpose (kept a
+      # sibling of provisioning/, not nested in it) so the dashboards
+      # file-provider (docker/grafana/provisioning/dashboards/dashboard.yml)
+      # points at a plain folder instead of mixing dashboard JSON into the
+      # same tree Grafana scans for datasource/provider YAML.
+      - ./docker/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"

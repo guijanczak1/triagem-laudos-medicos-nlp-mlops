@@ -1,0 +1,106 @@
+{
+  "id": null,
+  "uid": "triagem-api-observability",
+  "title": "Triagem API - Observabilidade",
+  "description": "Dashboard provisionado (T19) sobre as 6 metricas expostas em GET /metrics pela API de triagem (T17): taxa de requisicoes, latencia p50/p95, taxa de erro e predicoes por classe.",
+  "tags": ["triagem", "observabilidade"],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Taxa de requisicoes (req/s)",
+      "description": "rate(triagem_requests_total[1m]), por endpoint/metodo/status.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(triagem_requests_total[1m])",
+          "legendFormat": "{{endpoint}} {{method}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latencia (p50 / p95)",
+      "description": "histogram_quantile sobre triagem_request_duration_seconds_bucket.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(triagem_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(triagem_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Taxa de erro",
+      "description": "sum(rate(triagem_errors_total[5m])) / sum(rate(triagem_requests_total[5m])) -- agregado (sum) dos dois lados antes de dividir, porque triagem_errors_total{endpoint,type} e triagem_requests_total{endpoint,method,status} tem label sets diferentes; o Prometheus so casa vetores com o mesmo conjunto de labels, entao a divisao literal 'rate(triagem_errors_total[5m]) / rate(triagem_requests_total[5m])' nunca produz serie nenhuma (confirmado ao vivo contra a stack: 1 erro real gerado, 0 resultados da query literal). Ver docs/monitoring.md.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(triagem_errors_total[5m])) / sum(rate(triagem_requests_total[5m]))",
+          "legendFormat": "taxa de erro"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Predicoes por classe",
+      "description": "triagem_predictions_total, acumulado desde o start do processo, por label predito.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "triagem_predictions_total",
+          "legendFormat": "{{label}}"
+        }
+      ]
+    }
+  ]
+}

@@ -82,6 +82,15 @@ module = ["sklearn.*", "skl2onnx.*", "onnxruntime.*", "joblib.*", "onnx.*", "pan
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# pyyaml is a transitive dependency (pulled in by other packages, not
+# declared directly in [tool.poetry.dependencies]) -- used only in
+# tests/test_dashboard.py (T19) to parse the two Grafana provisioning YAML
+# files. Adding types-PyYAML as a real dev dependency for one test-only
+# import would be overkill; same pattern as the ML-library overrides above.
+module = ["yaml.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # apache-airflow lives in an optional Poetry group (not installed natively on
 # Windows - see dags/train_triagem_dag.py docstring); mypy runs against the
 # main venv, where it's genuinely absent, not a real missing-stub problem.

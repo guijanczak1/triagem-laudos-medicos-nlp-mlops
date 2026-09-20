@@ -1,0 +1,27 @@
+# Grafana dashboard provisioning (T19) -- auto-loads
+# docker/grafana/dashboards/triagem_api.json on container boot, no manual
+# "import dashboard" click required. Sibling of
+# docker/grafana/provisioning/datasources/prometheus.yml (T18), same
+# apiVersion 1 file-provider mechanism.
+apiVersion: 1
+
+providers:
+  - name: Triagem
+    orgId: 1
+    # Empty folder = Grafana's built-in "General" folder; nothing else is
+    # provisioned in this project, so a dedicated folder would just add a
+    # click to reach the one dashboard that exists.
+    folder: ""
+    type: file
+    disableDeletion: false
+    # Grafana re-reads the JSON file from disk on this interval, so editing
+    # docker/grafana/dashboards/triagem_api.json and restarting/waiting
+    # picks up the change without a full container recreate.
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      # Bind-mounted in docker-compose.yml's grafana service (T19), kept
+      # outside /etc/grafana/provisioning on purpose -- see that file's
+      # volumes comment.
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false
