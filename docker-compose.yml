@@ -1,0 +1,85 @@
+# Local observability stack (T18): api + prometheus + grafana on the
+# default profile (no `profiles:` key on any of them -- they come up on a
+# plain `docker compose up -d`). Services are kept in alphabetical order so
+# another task can append a new service (e.g. T15's `airflow`, gated behind
+# `profiles: ["airflow"]`) without reshuffling this file.
+#
+# Build the api image once before bringing the stack up:
+#   docker build -f docker/Dockerfile.api -t triagem-api:local .
+#
+# Then:
+#   docker compose config      # validate
+#   docker compose up -d       # start api + prometheus + grafana
+#   docker compose --profile airflow up -d   # also start airflow (T15)
+
+services:
+  api:
+    image: triagem-api:local
+    # Image already bakes in models/ at build time (see docker/Dockerfile.api
+    # for the rationale). This bind mount is a *local-dev convenience* so a
+    # fresh `poetry run python -m triagem.training.train` / `onnx_export` on
+    # the host is picked up on container restart without a rebuild; it does
+    # not change how the image is built or how it behaves in CI/prod.
+    volumes:
+      - ./models:/app/models:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - triagem-net
+    restart: unless-stopped
+    # HEALTHCHECK is already declared in docker/Dockerfile.api (GET /health);
+    # reused as-is here, nothing to override.
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      # Local-only defaults; override by setting these in a real (gitignored)
+      # .env -- never commit a real credential here (HARNESS §9.3/§9.4).
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - triagem-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - triagem-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  triagem-net:
+    driver: bridge
+
+volumes:
+  grafana-data: {}
+  prometheus-data: {}

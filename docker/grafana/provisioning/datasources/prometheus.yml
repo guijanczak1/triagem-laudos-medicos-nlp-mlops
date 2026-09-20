@@ -1,0 +1,14 @@
+# Grafana datasource provisioning (T18) -- auto-registers Prometheus on
+# container boot, no manual UI click required. Grafana loads every YAML
+# file under provisioning/datasources/ on startup.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Compose service name (network DNS), not localhost -- Grafana and
+    # Prometheus are separate containers on the same Compose network.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

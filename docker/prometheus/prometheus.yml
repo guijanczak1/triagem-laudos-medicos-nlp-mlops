@@ -1,0 +1,15 @@
+# Prometheus scrape config for the triage API (T18).
+#
+# Target uses the Compose service name ("api"), never localhost/127.0.0.1 --
+# Prometheus runs in its own container and resolves "api" via the Compose
+# network's embedded DNS (see docker-compose.yml, service "api").
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: triagem-api
+    scrape_interval: 5s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
