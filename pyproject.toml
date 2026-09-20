@@ -55,6 +55,12 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 [tool.ruff.lint.isort]
 known-first-party = ["triagem"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends()/Query()/... in argument defaults is the framework's
+# documented, intentional pattern (not the mutable-default-argument bug B008
+# guards against) -- see https://fastapi.tiangolo.com/tutorial/dependencies/.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
 [tool.black]
 line-length = 100
 target-version = ["py312"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from triagem.serving.api import app, create_app
 from triagem.serving.predictor import Prediction, Predictor, PredictorMetadata
 
-__all__ = ["Predictor", "Prediction", "PredictorMetadata"]
+__all__ = ["Predictor", "Prediction", "PredictorMetadata", "app", "create_app"]
