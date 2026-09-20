@@ -13,6 +13,57 @@
 #   docker compose --profile airflow up -d   # also start airflow (T15)
 
 services:
+  airflow:
+    # T15: Airflow standalone (webserver+scheduler+triggerer in one process,
+    # sqlite metadata db) for dags/train_triagem_dag.py (T14). Gated behind
+    # `profiles: ["airflow"]` -- opt-in, NEVER started by a plain
+    # `docker compose up -d`; only `docker compose --profile airflow up -d`
+    # brings it up, additively, alongside whatever is already running.
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    image: triagem-airflow:local
+    profiles: ["airflow"]
+    command: standalone
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      # Local-only defaults; override via a real (gitignored) .env -- same
+      # pattern as GF_SECURITY_ADMIN_* below (HARNESS §9.3/§9.4: never a
+      # real credential committed here).
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      # Resolved to the container-side mount points below so the DAG's task
+      # bodies (which read triagem.config.Settings) write into the same
+      # ./data and ./models the host sees -- explicit rather than relying
+      # on AIRFLOW_HOME being the process cwd.
+      TRIAGEM_DATA_DIR: /opt/airflow/data
+      TRIAGEM_RAW_DIR: /opt/airflow/data/raw
+      TRIAGEM_PROCESSED_DIR: /opt/airflow/data/processed
+      TRIAGEM_MODELS_DIR: /opt/airflow/models
+      TRIAGEM_DATA_PATH: /opt/airflow/data/processed/laudos.csv
+    volumes:
+      # AIRFLOW_HOME itself (metadata db, logs, plugins) persists across
+      # restarts in a named volume; the four bind mounts below override
+      # just their own subpaths on top of it, so a DAG edit / fresh
+      # dataset-or-model build on the host is picked up on container
+      # restart without rebuilding this image.
+      - airflow-home:/opt/airflow
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src:ro
+      - ./data:/opt/airflow/data
+      - ./models:/opt/airflow/models
+    ports:
+      - "8080:8080"
+    networks:
+      - triagem-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   api:
     image: triagem-api:local
     # Image already bakes in models/ at build time (see docker/Dockerfile.api
@@ -83,3 +134,4 @@ networks:
 volumes:
   grafana-data: {}
   prometheus-data: {}
+  airflow-home: {}

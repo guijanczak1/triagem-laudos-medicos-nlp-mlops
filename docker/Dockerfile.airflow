@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+#
+# Airflow image for the triagem training/retraining DAG
+# (dags/train_triagem_dag.py, T14). Extends the official Apache Airflow
+# image rather than installing apache-airflow into a from-scratch image:
+# the official image already solves the packaging/permissions/entrypoint
+# concerns (non-root `airflow` user, AIRFLOW_HOME=/opt/airflow, a working
+# `airflow` CLI entrypoint script that understands `standalone`) that would
+# otherwise have to be reproduced here.
+#
+# apache-airflow is intentionally NOT installed into this project's own
+# Poetry venv on the host -- see the optional `[tool.poetry.group.airflow]`
+# group in pyproject.toml: apache-airflow does not install natively on
+# Windows (needs pwd/fcntl). This image is the only place apache-airflow
+# actually runs; it is built/run via docker-compose.yml's `airflow` service,
+# gated behind `profiles: ["airflow"]` (opt-in, never started by a plain
+# `docker compose up -d`).
+#
+# dags/, src/, data/ and models/ are deliberately NOT copied into this
+# image -- docker-compose.yml bind-mounts them at runtime instead, so a
+# local dataset/model rebuild or a DAG edit is picked up on container
+# restart without rebuilding this image. Only the extra Python packages the
+# DAG's task bodies import (see docker/airflow/requirements-airflow.txt)
+# are installed here, on top of the base image's own apache-airflow
+# install.
+
+FROM apache/airflow:2.10.3-python3.12
+
+# Installed as the image's default `airflow` user (uid 50000, already
+# non-root) -- never switched to root.
+COPY docker/airflow/requirements-airflow.txt /tmp/requirements-airflow.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
+
+# src/ is bind-mounted (not copied) at /opt/airflow/src by
+# docker-compose.yml; PYTHONPATH must still resolve the `triagem` package
+# from there for the DAG's `from triagem... import ...` task bodies.
+# AIRFLOW__CORE__LOAD_EXAMPLES=false keeps `airflow dags list` limited to
+# this project's own DAG(s) -- also set in docker-compose.yml so it is
+# never silently lost if this image is run standalone (e.g. `docker run`)
+# without the compose environment.
+ENV PYTHONPATH=/opt/airflow/src \
+    AIRFLOW__CORE__LOAD_EXAMPLES=false

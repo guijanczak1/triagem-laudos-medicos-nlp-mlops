@@ -1,0 +1,15 @@
+# Runtime dependencies for dags/train_triagem_dag.py's task bodies
+# (triagem.data.download, triagem.data.build, triagem.training.train,
+# triagem.training.evaluate -- see that module's docstring for the exact
+# call chain). This is NOT the full pyproject.toml `main` dependency group:
+# fastapi/uvicorn/prometheus-client (serving, T10/T17) and
+# skl2onnx/onnx/onnxruntime (T20's ONNX export, never called from this DAG)
+# are deliberately left out to keep the Airflow image lean. Add a package
+# here only if a future DAG task actually imports it.
+#
+# Version bounds mirror pyproject.toml's [tool.poetry.dependencies].
+pandas>=2.2,<3.0
+scikit-learn>=1.5,<2.0
+requests>=2.32,<3.0
+joblib>=1.4,<2.0
+pydantic-settings>=2.5,<3.0

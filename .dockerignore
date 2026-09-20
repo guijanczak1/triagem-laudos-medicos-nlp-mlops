@@ -36,9 +36,13 @@ dags/
 deploy/
 scripts/
 .github/
-docker/airflow/
 docker/prometheus/
 docker/grafana/
+# NOTE: docker/airflow/ is NOT excluded -- docker/Dockerfile.airflow (T15)
+# shares this same build context (".") and needs docker/airflow/
+# requirements-airflow.txt. It is a tiny text file the api build never
+# COPYs (see docker/Dockerfile.api), so its presence in the api build
+# context is harmless.
 
 # Test suite -- not shipped in the runtime image.
 tests/
