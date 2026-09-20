@@ -1,0 +1,31 @@
+# Copy to terraform.tfvars (gitignored -- see .gitignore's "Terraform"
+# section, and never commit one with real values) and adjust as needed.
+# Every value below is a safe, non-sensitive default -- no account id, ARN,
+# credential, or secret belongs in this file or in terraform.tfvars.
+#
+# This file alone does not authorize a deploy. See HARNESS.md §6 and
+# docs/deploy_aws.md (T25): `terraform apply` only runs after the user's
+# explicit order, recorded in state/mlet-tech-challenge-fase-3/cloud_request.md
+# and answers_cloud.md (T25/T26) -- never from this file being filled in.
+
+project_name = "triagem"
+aws_region   = "us-east-1"
+
+container_port       = 8000
+health_check_path    = "/health"
+container_image_tag  = "latest"
+
+fargate_cpu    = 256 # 0.25 vCPU
+fargate_memory = 512 # 0.5 GB
+
+desired_count       = 1
+log_retention_days  = 7
+assign_public_ip    = true
+
+# Public demo default. Narrow to a specific CIDR (e.g. your own IP/32) if
+# this is ever applied outside a throwaway course deliverable.
+allowed_ingress_cidr_blocks = ["0.0.0.0/0"]
+
+extra_tags = {
+  Environment = "dev"
+}
