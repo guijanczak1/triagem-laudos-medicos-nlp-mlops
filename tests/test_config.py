@@ -48,7 +48,7 @@ def test_defaults_are_functional_without_env() -> None:
     assert settings.processed_dir == Path("data/processed")
     assert settings.models_dir == Path("models")
     assert settings.data_path == Path("data/processed/laudos.csv")
-    assert settings.model_backend == "sklearn"
+    assert settings.model_backend == "onnx"  # T22: onnx by default, sklearn is the fallback
     assert settings.seed == 42
     assert settings.api_port == 8000
     assert settings.log_level == "INFO"
@@ -64,7 +64,7 @@ def test_every_field_is_overridable_via_triagem_prefixed_env(
     monkeypatch.setenv("TRIAGEM_PROCESSED_DIR", "custom_data/processed")
     monkeypatch.setenv("TRIAGEM_MODELS_DIR", "custom_models")
     monkeypatch.setenv("TRIAGEM_DATA_PATH", "custom_data/processed/laudos.csv")
-    monkeypatch.setenv("TRIAGEM_MODEL_BACKEND", "onnx")
+    monkeypatch.setenv("TRIAGEM_MODEL_BACKEND", "sklearn")
     monkeypatch.setenv("TRIAGEM_SEED", "7")
     monkeypatch.setenv("TRIAGEM_API_PORT", "9001")
     monkeypatch.setenv("TRIAGEM_LOG_LEVEL", "DEBUG")
@@ -77,7 +77,7 @@ def test_every_field_is_overridable_via_triagem_prefixed_env(
     assert settings.processed_dir == Path("custom_data/processed")
     assert settings.models_dir == Path("custom_models")
     assert settings.data_path == Path("custom_data/processed/laudos.csv")
-    assert settings.model_backend == "onnx"
+    assert settings.model_backend == "sklearn"
     assert settings.seed == 7
     assert settings.api_port == 9001
     assert settings.log_level == "DEBUG"

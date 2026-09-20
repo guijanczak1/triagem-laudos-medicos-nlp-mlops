@@ -9,10 +9,22 @@ single time in :func:`_lifespan` and the resulting instance is stashed on
 ``app.state.predictor`` for every handler to reuse (on top of
 ``Predictor``'s own lazy-singleton cache).
 
-If the configured backend's artifact is missing at startup, the process
-still starts (so a container orchestrator can see it and `/health` can
-report the problem) but ``app.state.predictor`` stays ``None``; every
-endpoint that needs a model then responds ``503`` instead of crashing.
+``Settings.model_backend`` defaults to ``"onnx"`` (T21's benchmark: ~69%
+faster p50 than ``sklearn``). If its artifact (``models/model.onnx``) is
+missing at startup, :func:`_lifespan` falls back to the ``"sklearn"``
+backend instead of leaving the API unusable -- logged as an explicit
+``WARNING`` and reflected in ``GET /health`` / ``GET /model-info`` /
+``triagem_model_info`` via the backend the loaded ``Predictor`` actually
+reports (T22). This fallback lives here, at the API-startup layer, on
+purpose: ``Predictor.load(backend="onnx")`` itself never falls back
+silently (T9's contract; see ``triagem.serving.predictor``), so a caller
+that explicitly asks for ``"onnx"`` still fails loudly.
+
+If the resolved backend's artifact is missing too (e.g. neither
+``model.onnx`` nor ``model.joblib`` exist), the process still starts (so a
+container orchestrator can see it and `/health` can report the problem)
+but ``app.state.predictor`` stays ``None``; every endpoint that needs a
+model then responds ``503`` instead of crashing.
 """
 
 from __future__ import annotations
@@ -30,7 +42,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from triagem.config import get_settings
+from triagem.config import ModelBackend, get_settings
 from triagem.exceptions import ModelArtifactNotFound
 from triagem.serving import metrics as prom_metrics
 from triagem.serving.metrics import PrometheusMiddleware
@@ -51,16 +63,51 @@ from triagem.training.train import METRICS_FILENAME
 logger = logging.getLogger(__name__)
 
 
+#: Backend used as the explicit, logged fallback when the configured
+#: backend's artifact is missing at startup (T22). Never chosen silently:
+#: every fallback path below logs a WARNING naming both the backend that
+#: failed and this one.
+_FALLBACK_BACKEND: ModelBackend = "sklearn"
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Load the model exactly once at startup; never per request."""
+    """Load the model exactly once at startup; never per request.
+
+    Tries ``Settings.model_backend`` (default ``"onnx"``) first. If that
+    backend's artifact is missing and it is not already ``"sklearn"``,
+    falls back to ``"sklearn"`` -- logging an explicit WARNING either way,
+    so the fallback is visible in the process log and not just inferable
+    from ``/health``/``/model-info`` reporting an unexpected backend.
+    """
     app.state.startup_time = time.monotonic()
+    configured_backend = get_settings().model_backend
+
     try:
-        app.state.predictor = Predictor.load()
+        app.state.predictor = Predictor.load(backend=configured_backend)
     except ModelArtifactNotFound as exc:
-        logger.warning("model failed to load at startup, endpoints will 503: %s", exc)
-        app.state.predictor = None
-    else:
+        if configured_backend == _FALLBACK_BACKEND:
+            logger.warning("model failed to load at startup, endpoints will 503: %s", exc)
+            app.state.predictor = None
+        else:
+            logger.warning(
+                "configured backend %r artifact not found at startup (%s); "
+                "falling back to %r explicitly",
+                configured_backend,
+                exc,
+                _FALLBACK_BACKEND,
+            )
+            try:
+                app.state.predictor = Predictor.load(backend=_FALLBACK_BACKEND)
+            except ModelArtifactNotFound as fallback_exc:
+                logger.warning(
+                    "fallback backend %r also failed to load, endpoints will 503: %s",
+                    _FALLBACK_BACKEND,
+                    fallback_exc,
+                )
+                app.state.predictor = None
+
+    if app.state.predictor is not None:
         meta = app.state.predictor.metadata
         prom_metrics.set_model_info(backend=meta.backend, model_version=meta.model_version)
     yield

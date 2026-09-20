@@ -31,7 +31,12 @@ class Settings(BaseSettings):
         data_path: Path to the processed dataset consumed by
             ``load_dataset()``. Pointing this at another CSV with the same
             columns swaps the dataset without touching code.
-        model_backend: Inference backend used by ``Predictor``.
+        model_backend: Inference backend used by ``Predictor``. Defaults to
+            ``"onnx"`` (T21's benchmark measured it ~69% faster than
+            ``sklearn`` at p50). If ``models/model.onnx`` is missing at API
+            startup, ``triagem.serving.api`` falls back to ``"sklearn"``
+            explicitly -- logged as a WARNING, never silent -- rather than
+            failing to start; see task T22.
         seed: Random seed used across data splitting, training and
             benchmarking, for reproducibility.
         api_port: Port the uvicorn server binds to.
@@ -53,7 +58,7 @@ class Settings(BaseSettings):
     processed_dir: Path = Field(default=Path("data/processed"))
     models_dir: Path = Field(default=Path("models"))
     data_path: Path = Field(default=Path("data/processed/laudos.csv"))
-    model_backend: ModelBackend = Field(default="sklearn")
+    model_backend: ModelBackend = Field(default="onnx")
     seed: int = Field(default=42)
     api_port: int = Field(default=8000)
     log_level: str = Field(default="INFO")
