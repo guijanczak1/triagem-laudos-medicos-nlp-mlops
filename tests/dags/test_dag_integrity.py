@@ -11,6 +11,7 @@ where apache-airflow is actually installed.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -69,9 +70,7 @@ def test_dag_dependencies_in_order(dagbag: DagBag) -> None:
     """Each task depends on exactly the previous one, in the documented order."""
     dag = dagbag.dags[DAG_ID]
 
-    for upstream_id, downstream_id in zip(
-        EXPECTED_TASK_ORDER, EXPECTED_TASK_ORDER[1:], strict=True
-    ):
+    for upstream_id, downstream_id in pairwise(EXPECTED_TASK_ORDER):
         upstream = dag.get_task(upstream_id)
         downstream = dag.get_task(downstream_id)
         assert downstream_id in upstream.downstream_task_ids
