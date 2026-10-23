@@ -97,16 +97,30 @@ RUN addgroup --system triagem && \
     adduser --system --ingroup triagem --home /app --no-create-home triagem
 
 # --- AWS Lambda Web Adapter (T24 decision: Lambda + Function URL) ----------
-# This single COPY is the entire adaptation needed to run this otherwise
-# ordinary uvicorn/FastAPI image as a Lambda container-image function: the
-# adapter runs as a Lambda Extension alongside the normal ENTRYPOINT below,
+# This COPY is the entire adaptation needed to run this otherwise ordinary
+# uvicorn/FastAPI image as a Lambda container-image function: the adapter
+# runs as a Lambda Extension alongside the normal ENTRYPOINT below,
 # forwarding Function URL/API Gateway events to http://127.0.0.1:$PORT. It
 # works with any base image (not just AWS's own), so nothing else in this
 # Dockerfile changes, and the exact same image still runs unmodified under
 # plain `docker run` / docker-compose.yml for local dev -- the adapter is a
 # no-op there since nothing registers it as a Lambda extension outside the
 # real Lambda runtime.
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 /lambda-adapter /opt/extensions/lambda-adapter
+#
+# The binary is VENDORED (docker/lambda-adapter/lambda-adapter, x86_64,
+# ~3.2 MB, committed to the repo) rather than pulled via a multi-stage
+# `COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1` at build
+# time: public ECR anonymous pulls hit a per-IP rate limit that GitHub
+# Actions' shared runner IPs routinely exceed ("429 toomanyrequests: Data
+# limit exceeded" -- hit for real in this project's own docker-build.yml CI
+# run), which would make every CI build flaky through no fault of this
+# repo's code. Extracted once via:
+#   docker create --platform linux/amd64 public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 x
+#   docker cp <container_id>:/lambda-adapter docker/lambda-adapter/lambda-adapter
+# Source digest at extraction time: sha256:1e5ab4d9242167500ed8a7bed8a79b448228aaa51cf382fb51fe4bf8a5f9a811
+# (tag 1.0.1). Re-run the same two commands with a newer tag to upgrade.
+COPY docker/lambda-adapter/lambda-adapter /opt/extensions/lambda-adapter
+RUN chmod +x /opt/extensions/lambda-adapter
 ENV PORT=8000 \
     AWS_LWA_READINESS_CHECK_PATH=/health
 

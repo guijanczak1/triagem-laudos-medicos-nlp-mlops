@@ -1,0 +1,3 @@
+# Vendored static binary (see docker/Dockerfile.api) -- never touch line
+# endings on this one, or git mangles it on Windows checkouts.
+docker/lambda-adapter/lambda-adapter -text binary
