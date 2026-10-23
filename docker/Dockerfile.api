@@ -16,10 +16,11 @@
 #     `python -m triagem.optimization.onnx_export` / T20) IS the source of
 #     truth, so baking it in makes the image self-contained and reproducible.
 #   - The planned production target (README "Decisao arquitetural de nuvem",
-#     T23/T24) is AWS ECS Fargate behind an ALB. Fargate tasks have no local
-#     bind mounts, and this project does not provision EFS -- a volume-only
-#     strategy would leave the deployed container without a model. Task T22
-#     already assumes "Imagem Docker inclui onnxruntime e o artefato .onnx".
+#     T23/T24) is AWS Lambda (container image) behind a Function URL. Lambda
+#     has no local bind mounts, and this project does not provision EFS -- a
+#     volume-only strategy would leave the deployed container without a
+#     model. Task T22 already assumes "Imagem Docker inclui onnxruntime e o
+#     artefato .onnx".
 #   - Retraining changes rarely relative to code, so the model COPY is placed
 #     AFTER the dependency layer and AFTER the source layer: the dependency
 #     layer stays cached across retrains, and re-training alone only busts
@@ -94,6 +95,20 @@ ENV LANG=en_US.UTF-8 \
 # Non-root user the process runs as (created before COPY so --chown works).
 RUN addgroup --system triagem && \
     adduser --system --ingroup triagem --home /app --no-create-home triagem
+
+# --- AWS Lambda Web Adapter (T24 decision: Lambda + Function URL) ----------
+# This single COPY is the entire adaptation needed to run this otherwise
+# ordinary uvicorn/FastAPI image as a Lambda container-image function: the
+# adapter runs as a Lambda Extension alongside the normal ENTRYPOINT below,
+# forwarding Function URL/API Gateway events to http://127.0.0.1:$PORT. It
+# works with any base image (not just AWS's own), so nothing else in this
+# Dockerfile changes, and the exact same image still runs unmodified under
+# plain `docker run` / docker-compose.yml for local dev -- the adapter is a
+# no-op there since nothing registers it as a Lambda extension outside the
+# real Lambda runtime.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 /lambda-adapter /opt/extensions/lambda-adapter
+ENV PORT=8000 \
+    AWS_LWA_READINESS_CHECK_PATH=/health
 
 # --- Dependency layer: cacheable independently of both code and model ------
 COPY --from=builder /app/requirements.txt ./requirements.txt

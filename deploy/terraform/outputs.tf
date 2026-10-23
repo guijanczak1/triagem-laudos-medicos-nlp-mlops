@@ -7,24 +7,19 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.api.repository_url
 }
 
-output "ecs_cluster_name" {
-  description = "Name of the ECS cluster running the service."
-  value       = aws_ecs_cluster.main.name
+output "lambda_function_name" {
+  description = "Name of the Lambda function (useful for `aws lambda update-function-code` after a new image push)."
+  value       = aws_lambda_function.api.function_name
 }
 
-output "ecs_service_name" {
-  description = "Name of the ECS service (useful for `aws ecs update-service --force-new-deployment` after a new image push)."
-  value       = aws_ecs_service.api.name
-}
-
-output "alb_dns_name" {
-  description = "Public DNS name of the ALB. http://<this>/health should return 200 once a healthy task is running."
-  value       = aws_lb.main.dns_name
+output "lambda_function_url" {
+  description = "Public HTTPS endpoint (Lambda Function URL, no custom domain). <this>health should return 200 once an image has been pushed and the function invoked (the first request after a cold start may take a few seconds)."
+  value       = aws_lambda_function_url.api.function_url
 }
 
 output "cloudwatch_log_group_name" {
-  description = "CloudWatch Logs group receiving the container's stdout/stderr."
-  value       = aws_cloudwatch_log_group.api.name
+  description = "CloudWatch Logs group receiving the function's stdout/stderr."
+  value       = aws_cloudwatch_log_group.lambda.name
 }
 
 output "aws_account_id_in_use" {

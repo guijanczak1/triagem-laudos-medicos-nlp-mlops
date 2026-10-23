@@ -110,16 +110,41 @@ entregue.
 ECR em `us-east-1`): ordem de US$ 25-30/mes, dominado pelo custo fixo do
 ALB.
 
+### Instancia real implantada: Lambda + Function URL (restricao de orcamento AWS Academy)
+
+A analise acima (ECS Fargate + ALB) e a decisao arquitetural *geral* --
+valida para uma conta de producao sem restricao de orcamento. A conta real
+usada para implantar este projeto, porem, e um **AWS Academy Learner Lab**:
+orcamento fixo de ~US$50 para o curso inteiro (nao mensal), e o ALB
+especificamente continua cobrando sua taxa fixa por hora entre as sessoes
+de 4 horas do Lab, mesmo com o Fargate parado.
+
+Por isso, a instancia de fato implantada usa **AWS Lambda (imagem de
+container) + Function URL** no lugar de ECS Fargate + ALB -- sem taxa fixa
+por hora, custo esperado de US$ 0,00 dentro do free tier perpetuo da Lambda
+para uma demo/avaliacao de curso. Duas correcoes sobre a analise de Lambda
+acima, especificas deste deploy:
+
+- A objecao de **tamanho de pacote** nao se aplica: o deploy usa
+  `package_type = "Image"` (imagem de container, limite de 10 GB via ECR),
+  nao o limite de 250 MB de um pacote zip.
+- A objecao de **cold start** continua valida e e aceita deliberadamente
+  aqui -- o trade-off certo para uma conta de estudante com orcamento fixo,
+  nao uma contradicao da analise original.
+
+Ver [`docs/deploy_aws.md`](docs/deploy_aws.md) ("Por que Lambda aqui, e nao
+ECS Fargate + ALB") para o raciocinio completo e a tabela de custo
+atualizada.
+
 ### Estado da infraestrutura neste repositorio
 
-A infraestrutura esta escrita como codigo (Terraform: ECR, cluster e
-servico ECS Fargate, ALB, security groups, log group do CloudWatch, IAM
-de minimo privilegio) em `deploy/terraform/`, validada apenas em
-**dry-run** (`terraform fmt`, `terraform validate`, `terraform plan`).
-**Nenhum recurso foi criado na AWS** -- subir a infraestrutura de fato e
-uma decisao operacional do dono do projeto, tomada fora deste
-repositorio, e nao algo que qualquer automacao aqui executa por conta
-propria.
+A infraestrutura esta escrita como codigo (Terraform: ECR, funcao Lambda
+em imagem de container, Function URL, log group do CloudWatch, IAM de
+minimo privilegio) em `deploy/terraform/`, validada apenas em **dry-run**
+(`terraform fmt`, `terraform validate`, `terraform plan`). **Nenhum
+recurso foi criado na AWS** -- subir a infraestrutura de fato e uma
+decisao operacional do dono do projeto, tomada fora deste repositorio, e
+nao algo que qualquer automacao aqui executa por conta propria.
 
 ---
 

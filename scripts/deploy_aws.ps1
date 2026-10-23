@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
     Builds, pushes and deploys the triage API to the AWS stack defined in
-    deploy/terraform/ (ECR + ECS Fargate + ALB + CloudWatch + IAM).
+    deploy/terraform/ (ECR + Lambda container image + Function URL +
+    CloudWatch + IAM).
 
 .DESCRIPTION
     T25 (HARNESS.md SS6 -- "parada obrigatoria"). This script is the ONLY
@@ -19,8 +20,7 @@
          made.
 
     Only when BOTH conditions hold (explicit -WhatIf:$false AND the typed
-    confirmation) does the script call `docker push`, `terraform apply` and
-    (optionally) force a new ECS deployment.
+    confirmation) does the script call `docker push` and `terraform apply`.
 
     Do not remove either gate. Do not add -AutoApprove / -Force flags that
     skip the prompt. See docs/deploy_aws.md and
@@ -29,15 +29,16 @@
 
 .PARAMETER ProjectName
     Must match terraform.tfvars' project_name (default "triagem"). Used to
-    derive the ECR repository name (<ProjectName>-api) and the ECS service.
+    derive the ECR repository name (<ProjectName>-api) and the Lambda
+    function name.
 
 .PARAMETER AwsRegion
     AWS region. Must match terraform.tfvars' aws_region (default us-east-1).
 
 .PARAMETER ImageTag
     Tag applied to the built image and pushed to ECR. Must match
-    terraform.tfvars' container_image_tag (default "latest") or the ECS
-    task definition will point at a tag that was never pushed.
+    terraform.tfvars' container_image_tag (default "latest") or the Lambda
+    function will point at a tag that was never pushed.
 
 .PARAMETER TerraformDir
     Path to the Terraform root module. Default: deploy/terraform relative
@@ -186,9 +187,9 @@ if ($WhatIf) {
 Write-Section "REAL DEPLOY -- explicit confirmation required"
 
 Write-Host "This will create billable AWS resources in account $($callerIdentity.Account), region $AwsRegion." -ForegroundColor Yellow
-Write-Host "See docs/deploy_aws.md 'Custo estimado mensal' -- ballpark USD 26-31/month for this exact" -ForegroundColor Yellow
-Write-Host "stack (1 Fargate task 0.25 vCPU/0.5GB 24/7 + ALB + ECR + CloudWatch Logs), dominated by the" -ForegroundColor Yellow
-Write-Host "Application Load Balancer's fixed hourly charge, not by traffic." -ForegroundColor Yellow
+Write-Host "See docs/deploy_aws.md 'Custo estimado mensal' -- this stack (Lambda container image + Function" -ForegroundColor Yellow
+Write-Host "URL + ECR + CloudWatch Logs) has NO fixed hourly charge; cost is pay-per-request and falls" -ForegroundColor Yellow
+Write-Host "within the perpetual Lambda free tier (1M requests/month) for a course-deliverable demo." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Review the 'terraform plan' output printed above before answering." -ForegroundColor Yellow
 Write-Host ""
@@ -239,9 +240,10 @@ finally {
 }
 
 Write-Section "Done"
-Write-Host "If the ECS service already existed with an older task revision pointing at the same tag," -ForegroundColor DarkGray
-Write-Host "force a fresh pull with:" -ForegroundColor DarkGray
-Write-Host "  aws ecs update-service --cluster $ProjectName-cluster --service $ProjectName-api --force-new-deployment --region $AwsRegion" -ForegroundColor DarkGray
+Write-Host "If the Lambda function already existed and the image tag did not change, Lambda does NOT" -ForegroundColor DarkGray
+Write-Host "automatically notice the new image digest behind the same tag. Force it to pick up the push:" -ForegroundColor DarkGray
+Write-Host "  aws lambda update-function-code --function-name $ProjectName-api --image-uri $EcrImageUri --region $AwsRegion" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "Check http://<alb_dns_name>/health (see terraform output alb_dns_name above)." -ForegroundColor Green
-Write-Host "Teardown procedure (also billable to leave running -- destroy when done): docs/deploy_aws.md 'Teardown'." -ForegroundColor Yellow
+Write-Host "Check <lambda_function_url>health (see terraform output lambda_function_url above)." -ForegroundColor Green
+Write-Host "The first request after creation/update is a cold start and may take a few seconds." -ForegroundColor DarkGray
+Write-Host "Teardown procedure (ECR storage keeps billing a few cents until deleted): docs/deploy_aws.md 'Teardown'." -ForegroundColor Yellow

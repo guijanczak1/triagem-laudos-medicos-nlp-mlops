@@ -11,20 +11,18 @@
 project_name = "triagem"
 aws_region   = "us-east-1"
 
-container_port       = 8000
-health_check_path    = "/health"
-container_image_tag  = "latest"
+container_image_tag = "latest"
 
-fargate_cpu    = 256 # 0.25 vCPU
-fargate_memory = 512 # 0.5 GB
+lambda_memory_mb       = 1024
+lambda_timeout_seconds = 30
 
-desired_count       = 1
-log_retention_days  = 7
-assign_public_ip    = true
+# Set this to an existing role ARN (e.g. AWS Academy's pre-provisioned
+# "arn:aws:iam::<account_id>:role/LabRole") if the account cannot create new
+# IAM roles. Leave commented/null to let this stack create its own minimal
+# execution role (CloudWatch Logs write access only).
+# execution_role_arn = "arn:aws:iam::<account_id>:role/LabRole"
 
-# Public demo default. Narrow to a specific CIDR (e.g. your own IP/32) if
-# this is ever applied outside a throwaway course deliverable.
-allowed_ingress_cidr_blocks = ["0.0.0.0/0"]
+log_retention_days = 7
 
 extra_tags = {
   Environment = "dev"
