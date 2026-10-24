@@ -110,7 +110,7 @@ entregue.
 ECR em `us-east-1`): ordem de US$ 25-30/mes, dominado pelo custo fixo do
 ALB.
 
-### Instancia real implantada: Lambda + Function URL (restricao de orcamento AWS Academy)
+### Instancia real implantada: Lambda + API Gateway (restricao de orcamento AWS Academy)
 
 A analise acima (ECS Fargate + ALB) e a decisao arquitetural *geral* --
 valida para uma conta de producao sem restricao de orcamento. A conta real
@@ -120,10 +120,10 @@ especificamente continua cobrando sua taxa fixa por hora entre as sessoes
 de 4 horas do Lab, mesmo com o Fargate parado.
 
 Por isso, a instancia de fato implantada usa **AWS Lambda (imagem de
-container) + Function URL** no lugar de ECS Fargate + ALB -- sem taxa fixa
-por hora, custo esperado de US$ 0,00 dentro do free tier perpetuo da Lambda
-para uma demo/avaliacao de curso. Duas correcoes sobre a analise de Lambda
-acima, especificas deste deploy:
+container) + API Gateway (HTTP API)** no lugar de ECS Fargate + ALB -- sem
+taxa fixa por hora, custo medido de centavos/mes (ver
+[`docs/deploy_aws.md`](docs/deploy_aws.md) "Custo estimado mensal"). Duas
+correcoes sobre a analise de Lambda acima, especificas deste deploy:
 
 - A objecao de **tamanho de pacote** nao se aplica: o deploy usa
   `package_type = "Image"` (imagem de container, limite de 10 GB via ECR),
@@ -132,19 +132,28 @@ acima, especificas deste deploy:
   aqui -- o trade-off certo para uma conta de estudante com orcamento fixo,
   nao uma contradicao da analise original.
 
-Ver [`docs/deploy_aws.md`](docs/deploy_aws.md) ("Por que Lambda aqui, e nao
-ECS Fargate + ALB") para o raciocinio completo e a tabela de custo
-atualizada.
+O desenho original desta subsecao usava uma Lambda Function URL direta
+(mais simples, um recurso a menos). Aplicado de verdade contra a conta AWS
+Academy, invocacao **anonima** da Function URL retornou `403` -- isolado
+como uma guarda da propria Organizacao AWS Academy contra Function URLs
+publicas (acesso autenticado funcionava normalmente). API Gateway invoca a
+Lambda por uma acao/principal diferente e nao cai na mesma restricao --
+confirmado funcionando publicamente. Ver
+[`docs/deploy_aws.md`](docs/deploy_aws.md) ("Por que Lambda aqui, e nao ECS
+Fargate + ALB" e "Por que API Gateway") para o raciocinio e os achados
+completos.
 
 ### Estado da infraestrutura neste repositorio
 
-A infraestrutura esta escrita como codigo (Terraform: ECR, funcao Lambda
-em imagem de container, Function URL, log group do CloudWatch, IAM de
-minimo privilegio) em `deploy/terraform/`, validada apenas em **dry-run**
-(`terraform fmt`, `terraform validate`, `terraform plan`). **Nenhum
-recurso foi criado na AWS** -- subir a infraestrutura de fato e uma
-decisao operacional do dono do projeto, tomada fora deste repositorio, e
-nao algo que qualquer automacao aqui executa por conta propria.
+A infraestrutura esta escrita como codigo (Terraform: ECR, funcao Lambda em
+imagem de container, API Gateway HTTP API, log group do CloudWatch, IAM
+reusando a role pre-existente da conta) em `deploy/terraform/`. **Esta
+stack ja foi aplicada de verdade** contra a conta AWS Academy Learner Lab
+do autor, sob autorizacao explicita do dono do projeto (HARNESS SS6) --
+nao e mais apenas um dry-run. A URL publica do endpoint e efemera (vive
+dentro de uma conta de sandbox educacional que expira), entao nao e
+publicada aqui; obtenha-a com `terraform output api_url` depois de um
+`apply` (ver [`docs/deploy_aws.md`](docs/deploy_aws.md) "Passo a passo").
 
 ---
 

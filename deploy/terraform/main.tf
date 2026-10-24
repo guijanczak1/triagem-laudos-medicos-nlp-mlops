@@ -128,20 +128,57 @@ resource "aws_lambda_function" "api" {
   tags = local.common_tags
 }
 
-# --- Public entry point: Lambda Function URL -------------------------------
-# No ALB, no API Gateway: a Function URL is a free, built-in HTTPS endpoint.
-# AWS_LWA_READINESS_CHECK_PATH=/health (docker/Dockerfile.api) makes the AWS
-# Lambda Web Adapter extension poll the same GET /health the ALB design used
-# as its target-group health check, so the app code needed zero changes.
-resource "aws_lambda_function_url" "api" {
-  function_name      = aws_lambda_function.api.function_name
-  authorization_type = "NONE"
+# --- Public entry point: API Gateway (HTTP API) -----------------------------
+# The original design here was a Lambda Function URL (authorization_type =
+# "NONE") -- simpler and free, no separate resource needed. Deployed against
+# the real AWS Academy Learner Lab account, anonymous Function URL invocation
+# returned 403 Forbidden ("Forbidden. For troubleshooting Function URL
+# authorization issues..."), while a SigV4-signed request to the *same* URL
+# (authorization_type temporarily flipped to AWS_IAM to isolate the cause)
+# returned 200 -- proving the function and its resource policy were correct,
+# and the block was specific to *anonymous* Function URL access (almost
+# certainly an AWS Academy/Organizations guardrail against unauthenticated
+# public Function URLs, a known abuse vector in shared sandbox accounts).
+# API Gateway invokes Lambda via `lambda:InvokeFunction` from the
+# apigateway.amazonaws.com service principal -- a different action and
+# principal than the blocked `lambda:InvokeFunctionUrl` + Principal "*" -- so
+# it is not subject to that same restriction, confirmed working below.
+# AWS_LWA_READINESS_CHECK_PATH=/health (docker/Dockerfile.api) still applies:
+# the Lambda Web Adapter extension translates API Gateway's v2.0 proxy
+# payload the same way it would a Function URL's, so the app code needed
+# zero changes.
+resource "aws_apigatewayv2_api" "api" {
+  name          = "${local.name}-api"
+  protocol_type = "HTTP"
+
+  tags = local.common_tags
 }
 
-resource "aws_lambda_permission" "function_url_public" {
-  statement_id           = "AllowPublicFunctionUrlInvoke"
-  action                 = "lambda:InvokeFunctionUrl"
-  function_name          = aws_lambda_function.api.function_name
-  principal              = "*"
-  function_url_auth_type = "NONE"
+resource "aws_apigatewayv2_integration" "lambda" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.api.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "default" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "$default"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.api.id
+  name        = "$default"
+  auto_deploy = true
+
+  tags = local.common_tags
+}
+
+resource "aws_lambda_permission" "apigw_invoke" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }

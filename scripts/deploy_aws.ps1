@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Builds, pushes and deploys the triage API to the AWS stack defined in
-    deploy/terraform/ (ECR + Lambda container image + Function URL +
+    deploy/terraform/ (ECR + Lambda container image + API Gateway HTTP API +
     CloudWatch + IAM).
 
 .DESCRIPTION
@@ -147,14 +147,29 @@ Write-Host "Terraform dir: $TerraformDir"
 Write-Host "Mode:          $(if ($WhatIf) { 'DRY RUN (-WhatIf, default)' } else { 'APPLY PATH UNLOCKED (-WhatIf:$false)' })" -ForegroundColor $(if ($WhatIf) { "Green" } else { "Yellow" })
 
 # --- 1. Build the image locally (no AWS write call) -------------------------
+# --provenance=false --sbom=false: modern `docker buildx` (BuildKit) attaches
+# a build-provenance attestation manifest by default, turning the pushed
+# image into a multi-manifest index. AWS Lambda's CreateFunction validation
+# rejects that shape ("the image manifest, config or layer media type ... is
+# not supported") -- found by actually hitting this error against the real
+# account (T25). --platform linux/amd64 matches
+# deploy/terraform/variables.tf's `architectures = ["x86_64"]" and the
+# vendored docker/lambda-adapter/lambda-adapter binary (also x86_64).
 Write-Section "Docker build (local only, no push)"
 
-Invoke-Checked -Description "docker build -f docker/Dockerfile.api -t $LocalImage ." -Command {
-    docker build -f $DockerfilePath -t $LocalImage $RepoRoot
+Invoke-Checked -Description "docker build --platform linux/amd64 --provenance=false --sbom=false -f docker/Dockerfile.api -t $LocalImage ." -Command {
+    docker build --platform linux/amd64 --provenance=false --sbom=false -f $DockerfilePath -t $LocalImage $RepoRoot
 }
 
 # --- 2. Terraform init + plan (read-only against AWS) -----------------------
-Write-Section "Terraform init + plan (read-only)"
+# No -out here: this stack's `aws_lambda_function.api` has package_type =
+# "Image", which AWS validates against the ECR tag at CreateFunction time --
+# a plan computed before the ECR repo exists (first-ever deploy) can't later
+# be applied as-is once the repo and image exist. The plan below is for
+# human review only; the real apply happens in two separate steps further
+# down (ECR+logs first, then the Lambda/API Gateway resources once an image
+# has been pushed).
+Write-Section "Terraform plan (read-only, for review only -- not saved/reused)"
 
 Push-Location $TerraformDir
 try {
@@ -162,9 +177,8 @@ try {
         terraform init -input=false
     }
 
-    $planFile = "tfplan.out"
-    Invoke-Checked -Description "terraform plan -out=$planFile" -Command {
-        terraform plan -input=false -out=$planFile
+    Invoke-Checked -Description "terraform plan" -Command {
+        terraform plan -input=false
     }
 }
 finally {
@@ -187,9 +201,10 @@ if ($WhatIf) {
 Write-Section "REAL DEPLOY -- explicit confirmation required"
 
 Write-Host "This will create billable AWS resources in account $($callerIdentity.Account), region $AwsRegion." -ForegroundColor Yellow
-Write-Host "See docs/deploy_aws.md 'Custo estimado mensal' -- this stack (Lambda container image + Function" -ForegroundColor Yellow
-Write-Host "URL + ECR + CloudWatch Logs) has NO fixed hourly charge; cost is pay-per-request and falls" -ForegroundColor Yellow
-Write-Host "within the perpetual Lambda free tier (1M requests/month) for a course-deliverable demo." -ForegroundColor Yellow
+Write-Host "See docs/deploy_aws.md 'Custo estimado mensal' -- this stack (Lambda container image + API" -ForegroundColor Yellow
+Write-Host "Gateway HTTP API + ECR + CloudWatch Logs) has NO fixed hourly charge; cost is pay-per-request" -ForegroundColor Yellow
+Write-Host "and falls within Lambda's perpetual free tier for a course-deliverable demo (API Gateway HTTP" -ForegroundColor Yellow
+Write-Host "API is USD 1.00/million requests after any free tier -- negligible at demo volume)." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Review the 'terraform plan' output printed above before answering." -ForegroundColor Yellow
 Write-Host ""
@@ -202,7 +217,24 @@ if ($confirmation -cne "apply") {
     exit 1
 }
 
-# --- 5. ECR login + build/tag/push (first AWS write calls in this script) --
+# --- 5. Terraform apply, phase 1: ECR repo + log group only -----------------
+# aws_lambda_function.api (package_type = "Image") validates its image_uri
+# against ECR at creation time -- the repo must exist, and an image must
+# already be pushed to the tag it references, before it can be created. This
+# phase only creates the resources that have no such dependency.
+Write-Section "Terraform apply (phase 1/2: ECR + CloudWatch log group)"
+
+Push-Location $TerraformDir
+try {
+    Invoke-Checked -Description "terraform apply -target=aws_ecr_repository.api -target=aws_cloudwatch_log_group.lambda" -Command {
+        terraform apply -auto-approve -input=false -target=aws_ecr_repository.api -target=aws_cloudwatch_log_group.lambda
+    }
+}
+finally {
+    Pop-Location
+}
+
+# --- 6. ECR login + tag/push (first image write call in this script) -------
 Write-Section "ECR login + push"
 
 Invoke-Checked -Description "aws ecr get-login-password | docker login" -Command {
@@ -221,13 +253,15 @@ Invoke-Checked -Description "docker push $EcrImageUri" -Command {
     docker push $EcrImageUri
 }
 
-# --- 6. Terraform apply (using the plan reviewed above, no re-prompt) -------
-Write-Section "Terraform apply"
+# --- 7. Terraform apply, phase 2: Lambda + API Gateway ----------------------
+# The image now exists at the tag the Lambda function references, so
+# CreateFunction's image validation succeeds.
+Write-Section "Terraform apply (phase 2/2: Lambda + API Gateway)"
 
 Push-Location $TerraformDir
 try {
-    Invoke-Checked -Description "terraform apply tfplan.out" -Command {
-        terraform apply "tfplan.out"
+    Invoke-Checked -Description "terraform apply" -Command {
+        terraform apply -auto-approve -input=false
     }
 
     Write-Host ""
@@ -244,6 +278,6 @@ Write-Host "If the Lambda function already existed and the image tag did not cha
 Write-Host "automatically notice the new image digest behind the same tag. Force it to pick up the push:" -ForegroundColor DarkGray
 Write-Host "  aws lambda update-function-code --function-name $ProjectName-api --image-uri $EcrImageUri --region $AwsRegion" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "Check <lambda_function_url>health (see terraform output lambda_function_url above)." -ForegroundColor Green
+Write-Host "Check <api_url>health (see terraform output api_url above)." -ForegroundColor Green
 Write-Host "The first request after creation/update is a cold start and may take a few seconds." -ForegroundColor DarkGray
 Write-Host "Teardown procedure (ECR storage keeps billing a few cents until deleted): docs/deploy_aws.md 'Teardown'." -ForegroundColor Yellow

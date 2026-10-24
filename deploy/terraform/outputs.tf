@@ -12,9 +12,9 @@ output "lambda_function_name" {
   value       = aws_lambda_function.api.function_name
 }
 
-output "lambda_function_url" {
-  description = "Public HTTPS endpoint (Lambda Function URL, no custom domain). <this>health should return 200 once an image has been pushed and the function invoked (the first request after a cold start may take a few seconds)."
-  value       = aws_lambda_function_url.api.function_url
+output "api_url" {
+  description = "Public HTTPS endpoint (API Gateway HTTP API, no custom domain). <this>/health should return 200 once an image has been pushed and the function invoked (the first request after a cold start may take a few seconds). See main.tf's comment on aws_apigatewayv2_api.api for why this is API Gateway and not a bare Lambda Function URL."
+  value       = aws_apigatewayv2_stage.default.invoke_url
 }
 
 output "cloudwatch_log_group_name" {

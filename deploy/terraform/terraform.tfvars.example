@@ -13,8 +13,8 @@ aws_region   = "us-east-1"
 
 container_image_tag = "latest"
 
-lambda_memory_mb       = 1024
-lambda_timeout_seconds = 30
+lambda_memory_mb       = 2048
+lambda_timeout_seconds = 60
 
 # Set this to an existing role ARN (e.g. AWS Academy's pre-provisioned
 # "arn:aws:iam::<account_id>:role/LabRole") if the account cannot create new

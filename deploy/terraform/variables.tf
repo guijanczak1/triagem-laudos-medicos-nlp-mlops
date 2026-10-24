@@ -28,15 +28,15 @@ variable "container_image_tag" {
 }
 
 variable "lambda_memory_mb" {
-  description = "Lambda memory allocation in MB (also proportionally scales CPU). 1024 MB covers scikit-learn/ONNX Runtime import + inference comfortably; raise it if cold starts are too slow."
+  description = "Lambda memory allocation in MB (also proportionally scales CPU, which speeds up cold-start imports). 1024 MB was tried first against the real account and the cold start (scikit-learn + ONNX Runtime imports + model load) exceeded a 30s timeout (Sandbox.Timedout); 2048 MB resolves it comfortably."
   type        = number
-  default     = 1024
+  default     = 2048
 }
 
 variable "lambda_timeout_seconds" {
-  description = "Lambda invocation timeout. Generous relative to the measured p50/p95 inference latency (see docs/latency_report.md) to absorb a cold start on the first request after idle."
+  description = "Lambda invocation timeout. Must be generous enough to absorb a cold start (scikit-learn/ONNX Runtime import + model load), not just the measured p50/p95 warm inference latency (see docs/latency_report.md) -- 30s was measured too short against the real account at 1024 MB memory; 60s at 2048 MB works."
   type        = number
-  default     = 30
+  default     = 60
 }
 
 variable "execution_role_arn" {
